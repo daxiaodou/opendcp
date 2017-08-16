@@ -22,7 +22,6 @@ import (
 	"weibo.com/opendcp/jupiter/models"
 	"weibo.com/opendcp/jupiter/provider"
 	"weibo.com/opendcp/jupiter/service/instance"
-
 )
 
 const (
@@ -54,22 +53,26 @@ func (sf *StartFuture) Run() error {
 		return err
 	}
 	logstore.Info(sf.CorrelationId, sf.InstanceId, "----- Begin start instance in future -----")
-  logstore.Info(sf.CorrelationId,sf.InstanceId,"(1). Wait the instance stop")
-
-	if(sf.ProviderName=="aliyun") {
-		for j := 0; j < INTERVAL; j++ {
-			logstore.Info(sf.CorrelationId, sf.InstanceId, "wait for instance", sf.InstanceId, "to stop:", j)
+	logstore.Info(sf.CorrelationId, sf.InstanceId, "(1). wait for instances to start")
+	for j := 0; j < INTERVAL; j++ {
+		logstore.Info(sf.CorrelationId, sf.InstanceId, "wait for instance", sf.InstanceId, "to stop:", j)
+		if sf.ProviderName == "aliyun" {
 			if providerDriver.WaitForInstanceToStop(sf.InstanceId) {
 				break
 			}
-			time.Sleep(TIME4WAIT * time.Second)
-    }
-    logstore.Info(sf.CorrelationId,sf.InstanceId,"(2). Get the instance info and update ip info in db")
-		ins, err := providerDriver.GetInstance(sf.InstanceId)
-		if err != nil {
-			return err
+		} else if sf.ProviderName == "aws" {
+			return nil
 		}
-		// 支持专有网和经典网
+
+		time.Sleep(TIME4WAIT * time.Second)
+	}
+	ins, err := providerDriver.GetInstance(sf.InstanceId)
+	logstore.Info(sf.CorrelationId, sf.InstanceId, "(2). Get the instance info and update ip info in db")
+	if err != nil {
+		return err
+	}
+
+	if sf.ProviderName == "aliyun" {
 		if len(ins.PrivateIpAddress) > 0 {
 			sf.Ip = ins.PrivateIpAddress
 			if err := dao.UpdateInstancePrivateIp(ins.InstanceId, ins.PrivateIpAddress); err != nil {
@@ -85,8 +88,8 @@ func (sf *StartFuture) Run() error {
 				return err
 			}
 		}
-    logstore.Info(sf.CorrelationId,sf.InstanceId,sf.Ip, "Update the ip of instance successfully")
-	  logstore.Info(sf.CorrelationId,sf.InstanceId,"(3). Start the instance")
+		logstore.Info(sf.CorrelationId, sf.InstanceId, sf.Ip, "Update the ip of instance successfully")
+		logstore.Info(sf.CorrelationId, sf.InstanceId, "(3). Start the instance")
 		isStart, err := providerDriver.Start(sf.InstanceId)
 		if err != nil {
 			return err
@@ -94,12 +97,12 @@ func (sf *StartFuture) Run() error {
 		logstore.Info(sf.CorrelationId, sf.InstanceId, "Is the machine start?", isStart)
 		for i := 0; i < 60; i++ {
 			time.Sleep(10 * time.Second)
-			logstore.Info(sf.CorrelationId, sf.InstanceId, "Wati for instance", sf.InstanceId, "to start", i)
+			logstore.Info(sf.CorrelationId, sf.InstanceId, "Wait for instance", sf.InstanceId, "to start", i)
 			if providerDriver.WaitToStartInstance(sf.InstanceId) {
 				break
 			}
 		}
-	}else if(sf.ProviderName=="openstack"){
+	} else if sf.ProviderName == "openstack" {
 		for j := 0; j < INTERVAL; j++ {
 			logstore.Info(sf.CorrelationId, sf.InstanceId, "wait for instance", sf.InstanceId, "to start:", j)
 			if providerDriver.WaitToStartInstance(sf.InstanceId) {
@@ -108,7 +111,7 @@ func (sf *StartFuture) Run() error {
 			time.Sleep(TIME4WAIT * time.Second)
 		}
 		privateIpAddress, err := providerDriver.AllocatePublicIpAddress(sf.InstanceId)
-		if err != nil{
+		if err != nil {
 			return err
 		}
 		sf.Ip = privateIpAddress
@@ -137,8 +140,8 @@ func (sf *StartFuture) Success() {
 	//}
 	if sf.AutoInit {
 		//Exec.Submit(NewAnsibleTaskFuture(sf.InstanceId, sf.Ip, roles, sf.CorrelationId))
-		logstore.Info(sf.CorrelationId,sf.InstanceId,"3. Begin to execute init operation in the instance")
-		instance.ManageDev(sf.Ip, conf.Config.Password, sf.InstanceId, sf.CorrelationId)
+		logstore.Info(sf.CorrelationId, sf.InstanceId, "3. Begin to execute init operation in the instance")
+		instance.ManageDev(sf.Ip, conf.Config.Password, sf.InstanceId, sf.CorrelationId, 0)
 	}
 }
 
